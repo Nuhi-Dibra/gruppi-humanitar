@@ -5,7 +5,7 @@ const fs = require("fs");
 const app = express();
 
 const PORT = process.env.PORT || 3000;
-const db = new sqlite3.Database("./database.db");
+const db = new sqlite3.Database("./data/database.db");
 
 app.use(express.json());
 app.use(express.static("public"));
