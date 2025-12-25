@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Raccolta Gruppo</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="bg-shape s1"></div>
+<div class="bg-shape s2"></div>
+<div class="bg-shape s3"></div>
+
+<div id="entry" class="entry">
+  <div class="entry-card" onclick="showCreate()">➕ Nuovo gruppo</div>
+  <div class="entry-card" onclick="showLogin()">👥 Gruppo esistente</div>
+</div>
+
+<div id="createBox" class="card hidden">
+  <input id="ngName" placeholder="Nome gruppo">
+  <input id="ngAdmin" placeholder="Nome admin">
+  <input id="ngPass" type="password" placeholder="Password admin">
+  <button onclick="createGroup()">Crea gruppo</button>
+  <button class="ghost" onclick="back()">Indietro</button>
+</div>
+
+<div id="loginBox" class="card hidden">
+  <div id="groupList"></div>
+  <input id="lName" placeholder="Il tuo nome">
+  <input id="lPass" type="password" placeholder="Password (solo admin)">
+  <button onclick="login()">Entra</button>
+  <button class="ghost" onclick="back()">Indietro</button>
+</div>
+
+<div id="app" class="hidden">
+  <header class="top">
+    <div>
+      <div id="qAr" class="arabic"></div>
+      <div id="qIt" class="italian"></div>
+    </div>
+    <div class="total">Totale: <span id="total">0€</span></div>
+  </header>
+
+  <div class="tableWrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Nome</th>
+          <th>Quota</th>
+          <th>Extra</th>
+          <th colspan="12">Mesi</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <div id="adminPanel" class="card glass hidden">
+    <div class="admin-grid">
+
+      <div class="admin-card">
+        <select id="payUser"></select>
+        <select id="payMonth"></select>
+        <div class="toggle">
+          <button id="btnNormal" class="active" onclick="setType('normal')">Quota</button>
+          <button id="btnExtra" onclick="setType('extra')">Extra</button>
+        </div>
+        <input id="payAmount" type="number" value="10">
+        <button class="primary" onclick="pay()">Conferma</button>
+      </div>
+
+      <div class="admin-card">
+        <input id="newUserName" placeholder="Nuovo utente">
+        <button onclick="addUser()">Aggiungi</button>
+        <select id="removeUser"></select>
+        <button class="danger" onclick="removeUserFn()">Rimuovi</button>
+      </div>
+
+      <div class="admin-card">
+        <input id="totalFix" type="number" placeholder="Totale gruppo">
+        <button onclick="setTotal()">Imposta totale</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

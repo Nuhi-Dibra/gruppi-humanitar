@@ -1,0 +1,145 @@
+const express = require("express");
+const sqlite3 = require("sqlite3").verbose();
+const bodyParser = require("body-parser");
+const app = express();
+
+app.use(bodyParser.json());
+app.use(express.static("public"));
+
+const db = new sqlite3.Database("db.sqlite");
+
+const QUOTA = 10;
+const MONTHS = [
+  "gennaio","febbraio","marzo","aprile","maggio","giugno",
+  "luglio","agosto","settembre","ottobre","novembre","dicembre"
+];
+
+let GROUP = [
+  "Nuhi","Abdullah","Alajdin","Beratconst express = require("express");
+const sqlite3 = require("sqlite3").verbose();
+const bodyParser = require("body-parser");
+const app = express();
+
+app.use(bodyParser.json());
+app.use(express.static("public"));
+
+const db = new sqlite3.Database("db.sqlite");
+
+const QUOTA = 10;
+const MONTHS = [
+  "gennaio","febbraio","marzo","aprile","maggio","giugno",
+  "luglio","agosto","settembre","ottobre","novembre","dicembre"
+];
+
+let GROUP = [
+  "Nuhi","Abdullah","Alajdin","Berat","Besnik","Albit",
+  "Erhan","Gajur","Kemo","Mazem","Samir","Sinan","Zumer"
+];
+
+const ISLAMIC_QUOTES = [
+  {arab:"الصبر مفتاح الفرج", it:"La pazienza è la chiave della felicità"},
+  {arab:"إن الله مع الصابرين", it:"Dio è con chi persevera"},
+  {arab:"افعل الخير ترى الخير", it:"Fai del bene e vedrai il bene"},
+  {arab:"من رحِم رُزِق رحمة", it:"Chi è misericordioso sarà ricompensato"},
+  {arab:"الإيمان يحرك الجبال", it:"La fede muove le montagne"}
+];
+
+// crea tabelle
+db.serialize(()=>{
+  db.run(`CREATE TABLE IF NOT EXISTS users(
+    name TEXT PRIMARY KEY,
+    role TEXT
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS payments(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user TEXT,
+    month TEXT,
+    amount INTEGER,
+    type TEXT
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS totals(
+    id INTEGER PRIMARY KEY,
+    totalQuota INTEGER,
+    totalExtra INTEGER
+  )`);
+
+  // Inserisce utenti fissi
+  GROUP.forEach(n=>{
+    db.run(
+      "INSERT OR IGNORE INTO users(name,role) VALUES(?,?)",
+      [n, n==="Nuhi"?"admin":"user"]
+    );
+  });
+
+  // Inizializza totals
+  db.run("INSERT OR IGNORE INTO totals(id,totalQuota,totalExtra) VALUES(1,0,0)");
+});
+
+// LOGIN
+app.post("/login",(req,res)=>{
+  const name = req.body.name;
+  if(!GROUP.includes(name)) return res.status(403).json({error:"NON AUTORIZZATO"});
+  db.get("SELECT * FROM users WHERE name=?",[name],(e,u)=>res.json(u));
+});
+
+// ADMIN: aggiungi pagamento (quota o extra)
+app.post("/admin/pay",(req,res)=>{
+  const {admin,user,month,amount,type} = req.body;
+  if(admin!=="Nuhi") return res.status(403).json({error:"solo admin"});
+  if(!GROUP.includes(user)) return res.status(400).json({error:"utente non valido"});
+  if(type==="quota" && !MONTHS.includes(month)) return res.status(400).json({error:"mese non valido"});
+
+  if(type==="quota"){
+    db.get("SELECT * FROM payments WHERE user=? AND month=? AND type='quota'", [user, month], (e,row)=>{
+      if(row) return res.status(400).json({error:"Mese già pagato"});
+      db.run("INSERT INTO payments(user,month,amount,type) VALUES(?,?,?,?)",[user,month,amount,"quota"],()=>{
+        db.get("SELECT * FROM totals WHERE id=1",(e,t)=>{
+          let newQuota = t.totalQuota + amount;
+          db.run("UPDATE totals SET totalQuota=? WHERE id=1",[newQuota],()=>res.json({ok:true}));
+        });
+      });
+    });
+  } else if(type==="extra"){
+    db.run("INSERT INTO payments(user,month,amount,type) VALUES(?,?,?,?)",[user,"extra",amount,"extra"],()=>{
+      db.get("SELECT * FROM totals WHERE id=1",(e,t)=>{
+        let newExtra = t.totalExtra + amount;
+        db.run("UPDATE totals SET totalExtra=? WHERE id=1",[newExtra],()=>res.json({ok:true}));
+      });
+    });
+  } else {
+    res.status(400).json({error:"tipo non valido"});
+  }
+});
+
+// ADMIN: modifica totali manualmente
+app.post("/admin/updateTotals",(req,res)=>{
+  const {admin,totalQuota,totalExtra} = req.body;
+  if(admin!=="Nuhi") return res.status(403).json({error:"solo admin"});
+  db.run("UPDATE totals SET totalQuota=?, totalExtra=? WHERE id=1",[totalQuota,totalExtra],()=>res.json({ok:true}));
+});
+
+// ADMIN: aggiungi nuovo utente
+app.post("/admin/addUser",(req,res)=>{
+  const {admin,name} = req.body;
+  if(admin!=="Nuhi") return res.status(403).json({error:"solo admin"});
+  if(GROUP.includes(name)) return res.status(400).json({error:"utente già esiste"});
+  GROUP.push(name);
+  db.run("INSERT OR IGNORE INTO users(name,role) VALUES(?,?)",[name,"user"],()=>res.json({ok:true}));
+});
+
+// DATI FRONTE
+app.get("/data",(req,res)=>{
+  db.all("SELECT * FROM users",(e,users)=>{
+    db.all("SELECT * FROM payments",(e2,payments)=>{
+      db.get("SELECT * FROM totals WHERE id=1",(e3,totals)=>{
+        const today = new Date();
+        const quote = ISLAMIC_QUOTES[today.getDate() % ISLAMIC_QUOTES.length];
+        res.json({users,payments,months:MONTHS,quota:QUOTA,quote,totals});
+      });
+    });
+  });
+});
+
+app.listen(3000,()=>console.log("APP ATTIVA 👉 http://localhost:3000"));

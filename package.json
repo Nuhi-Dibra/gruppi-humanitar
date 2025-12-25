@@ -1,0 +1,14 @@
+{
+  "name": "raccolta-gruppo",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "init-db": "node init-db.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "sqlite3": "^5.1.7",
+    "node-cron": "^3.0.3"
+  }
+}
