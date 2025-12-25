@@ -1,154 +1,198 @@
 const express = require("express");
-const sqlite3 = require("sqlite3").verbose();
-const path = require("path");
-
 const app = express();
+
+/* 🔥 FIX ONLINE: porta corretta per Render / hosting */
 const PORT = process.env.PORT || 3000;
 
-// =======================
-// RENDER PERSISTENT DISK
-// =======================
-const DATA_DIR = process.env.RENDER ? "/data" : __dirname;
-const DB_PATH = path.join(DATA_DIR, "database.db");
-
-// =======================
-// MIDDLEWARE
-// =======================
 app.use(express.json());
 app.use(express.static("public"));
 
-// =======================
-// DATABASE
-// =======================
-const db = new sqlite3.Database(DB_PATH, (err) => {
-  if (err) {
-    console.error("DB error:", err);
-  } else {
-    console.log("Database aperto:", DB_PATH);
+const MONTHS = [
+  "gennaio","febbraio","marzo","aprile","maggio","giugno",
+  "luglio","agosto","settembre","ottobre","novembre","dicembre"
+];
+
+const QUOTES = [
+  { ar:"إِنَّ مَعَ الْعُسْرِ يُسْرًا", it:"Con la difficoltà viene la facilità." },
+  { ar:"إِنَّ اللَّهَ مَعَ الصَّابِرِينَ", it:"Allah è con i pazienti." },
+  { ar:"حَسْبُنَا اللَّهُ وَنِعْمَ الْوَكِيلُ", it:"Allah ci basta ed è il miglior protettore." }
+];
+
+const dailyQuote = () => QUOTES[new Date().getDate() % QUOTES.length];
+
+/* ===== DATI ===== */
+let groups = {
+  "nuhi": {
+    id: "nuhi",
+    name: "Gruppo Nuhi",
+    admin: "Nuhi",
+    password: "2005",
+    quote: dailyQuote(),
+    total: 0,
+    users: [
+      "Nuhi","Kemo","Abdullah","Alajdin","Berat","Besnik",
+      "Albit","Erhan","Gajur","Mazem","Samir","Sinan","Zumer"
+    ].map((n,i)=>({
+      id:i+1,
+      name:n,
+      quota:0,
+      extra:0,
+      months:Object.fromEntries(MONTHS.map(m=>[m,false]))
+    }))
   }
+};
+
+/* ===== API PUBBLICHE ===== */
+app.get("/groups",(req,res)=>{
+  res.json(Object.values(groups).map(g=>({id:g.id,name:g.name})));
 });
 
-db.serialize(() => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS groups (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT UNIQUE NOT NULL
-    )
-  `);
+app.post("/groups/create",(req,res)=>{
+  const { name, admin, password } = req.body;
+  const id = name.toLowerCase().replace(/\s+/g,"-");
+  if(groups[id]) return res.status(400).end();
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      group_id INTEGER,
-      quota INTEGER DEFAULT 0,
-      extra INTEGER DEFAULT 0,
-      FOREIGN KEY(group_id) REFERENCES groups(id)
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS months (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER,
-      month TEXT,
-      paid INTEGER DEFAULT 0,
-      FOREIGN KEY(user_id) REFERENCES users(id)
-    )
-  `);
+  groups[id] = {
+    id,
+    name,
+    admin,
+    password,
+    quote: dailyQuote(),
+    total: 0,
+    users: [{
+      id:1,
+      name:admin,
+      quota:0,
+      extra:0,
+      months:Object.fromEntries(MONTHS.map(m=>[m,false]))
+    }]
+  };
+  res.json({ok:true});
 });
 
-// =======================
-// API
-// =======================
+app.post("/login",(req,res)=>{
+  const { groupId, name, password } = req.body;
+  const g = groups[groupId];
+  if(!g) return res.json({ok:false});
 
-// GET gruppi
-app.get("/groups", (req, res) => {
-  db.all("SELECT * FROM groups", (err, rows) => {
-    if (err) return res.status(500).json(err);
-    res.json(rows);
+  const isAdmin = name===g.admin && password===g.password;
+  const exists = g.users.find(u=>u.name===name);
+
+  if(!exists && !isAdmin) return res.json({ok:false});
+  if(name===g.admin && !isAdmin) return res.json({ok:false});
+
+  res.json({ok:true,isAdmin});
+});
+
+app.get("/group/:id",(req,res)=>{
+  res.json(groups[req.params.id]);
+});
+
+/* ===== ADMIN: AGGIUNGI ===== */
+app.post("/admin/pay",(req,res)=>{
+  const { groupId, admin, password, userId, amount, month } = req.body;
+  const g = groups[groupId];
+  if(admin!==g.admin || password!==g.password) return res.status(403).end();
+
+  const u = g.users.find(x=>x.id===userId);
+  u.quota += amount;
+  g.total += amount;
+  u.months[month] = true;
+
+  res.json(g);
+});
+
+app.post("/admin/extra",(req,res)=>{
+  const { groupId, admin, password, userId, amount } = req.body;
+  const g = groups[groupId];
+  if(admin!==g.admin || password!==g.password) return res.status(403).end();
+
+  const u = g.users.find(x=>x.id===userId);
+  u.extra += amount;
+  g.total += amount;
+
+  res.json(g);
+});
+
+/* ===== ADMIN: CORREZIONI (ULTIMA MODIFICA) ===== */
+
+// ➖ togli quota
+app.post("/admin/remove-pay",(req,res)=>{
+  const { groupId, admin, password, userId, amount, month } = req.body;
+  const g = groups[groupId];
+  if(admin!==g.admin || password!==g.password) return res.status(403).end();
+
+  const u = g.users.find(x=>x.id===userId);
+  u.quota = Math.max(0, u.quota - amount);
+  g.total = Math.max(0, g.total - amount);
+  u.months[month] = false;
+
+  res.json(g);
+});
+
+// ➖ togli extra
+app.post("/admin/remove-extra",(req,res)=>{
+  const { groupId, admin, password, userId, amount } = req.body;
+  const g = groups[groupId];
+  if(admin!==g.admin || password!==g.password) return res.status(403).end();
+
+  const u = g.users.find(x=>x.id===userId);
+  u.extra = Math.max(0, u.extra - amount);
+  g.total = Math.max(0, g.total - amount);
+
+  res.json(g);
+});
+
+// ✏️ imposta quota esatta
+app.post("/admin/set-quota",(req,res)=>{
+  const { groupId, admin, password, userId, quota } = req.body;
+  const g = groups[groupId];
+  if(admin!==g.admin || password!==g.password) return res.status(403).end();
+
+  const u = g.users.find(x=>x.id===userId);
+  g.total -= u.quota;
+  u.quota = Number(quota);
+  g.total += u.quota;
+
+  res.json(g);
+});
+
+/* ===== ADMIN EXTRA ===== */
+app.post("/admin/add-user",(req,res)=>{
+  const { groupId, admin, password, userName } = req.body;
+  const g = groups[groupId];
+  if(admin!==g.admin || password!==g.password) return res.status(403).end();
+
+  g.users.push({
+    id:g.users.length+1,
+    name:userName,
+    quota:0,
+    extra:0,
+    months:Object.fromEntries(MONTHS.map(m=>[m,false]))
   });
+
+  res.json(g);
 });
 
-// CREA gruppo
-app.post("/groups", (req, res) => {
-  const { name } = req.body;
-  db.run("INSERT INTO groups (name) VALUES (?)", [name], function (err) {
-    if (err) return res.status(400).json(err);
-    res.json({ id: this.lastID, name });
-  });
+app.post("/admin/remove-user",(req,res)=>{
+  const { groupId, admin, password, userName } = req.body;
+  const g = groups[groupId];
+  if(admin!==g.admin || password!==g.password) return res.status(403).end();
+
+  g.users = g.users.filter(u=>u.name!==userName);
+  res.json(g);
 });
 
-// GET gruppo completo
-app.get("/group/:id", (req, res) => {
-  const groupId = req.params.id;
+app.post("/admin/set-total",(req,res)=>{
+  const { groupId, admin, password, total } = req.body;
+  const g = groups[groupId];
+  if(admin!==g.admin || password!==g.password) return res.status(403).end();
 
-  db.get("SELECT * FROM groups WHERE id = ?", [groupId], (err, group) => {
-    if (err || !group) return res.status(404).json({ error: "Group not found" });
-
-    db.all("SELECT * FROM users WHERE group_id = ?", [groupId], (err, users) => {
-      if (err) return res.status(500).json(err);
-
-      let pending = users.length;
-      if (pending === 0) return res.json({ ...group, users: [] });
-
-      users.forEach((u) => {
-        db.all(
-          "SELECT month, paid FROM months WHERE user_id = ?",
-          [u.id],
-          (err, months) => {
-            u.months = {};
-            months.forEach((m) => (u.months[m.month] = !!m.paid));
-            pending--;
-            if (pending === 0) res.json({ ...group, users });
-          }
-        );
-      });
-    });
-  });
+  g.total = Number(total);
+  res.json(g);
 });
 
-// CREA utente
-app.post("/user", (req, res) => {
-  const { name, group_id } = req.body;
-  db.run(
-    "INSERT INTO users (name, group_id) VALUES (?, ?)",
-    [name, group_id],
-    function (err) {
-      if (err) return res.status(400).json(err);
-      res.json({ id: this.lastID });
-    }
-  );
-});
-
-// TOGGLE MESE
-app.post("/month", (req, res) => {
-  const { user_id, month } = req.body;
-
-  db.get(
-    "SELECT * FROM months WHERE user_id = ? AND month = ?",
-    [user_id, month],
-    (err, row) => {
-      if (row) {
-        db.run(
-          "UPDATE months SET paid = NOT paid WHERE id = ?",
-          [row.id],
-          () => res.json({ ok: true })
-        );
-      } else {
-        db.run(
-          "INSERT INTO months (user_id, month, paid) VALUES (?, ?, 1)",
-          [user_id, month],
-          () => res.json({ ok: true })
-        );
-      }
-    }
-  );
-});
-
-// =======================
-// START SERVER
-// =======================
-app.listen(PORT, "0.0.0.0", () => {
-  console.log("Online su porta", PORT);
+/* ===== AVVIO SERVER (ONLINE + LOCALE) ===== */
+app.listen(PORT, () => {
+  console.log("Server avviato sulla porta " + PORT);
 });
